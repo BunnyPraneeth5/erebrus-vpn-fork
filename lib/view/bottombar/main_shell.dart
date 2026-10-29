@@ -36,6 +36,9 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   int _index = 0;
+
+  /// Intercept back on the VPN tab until the Android version is known.
+  bool _backgroundOnBack = defaultTargetPlatform == TargetPlatform.android;
   bool _autoConnectAttempted = false;
   Worker? _autoConnectWorker;
   late final List<Widget> _tabs;
@@ -52,6 +55,13 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(
+      needsBackgroundOnBack().then((needed) {
+        if (mounted && needed != _backgroundOnBack) {
+          setState(() => _backgroundOnBack = needed);
+        }
+      }),
+    );
     _tabs = [
       const DesktopScreen(child: _HomeTab()),
       const DesktopScreen(
@@ -138,9 +148,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       index: _index,
       onSelectTab: _go,
       browserBack: _browserBack,
-      moveToBackground: defaultTargetPlatform == TargetPlatform.android
-          ? moveAppToBackground
-          : null,
+      moveToBackground: _backgroundOnBack ? moveAppToBackground : null,
       child: Scaffold(
         extendBody: false,
         backgroundColor: AppColors.bg,

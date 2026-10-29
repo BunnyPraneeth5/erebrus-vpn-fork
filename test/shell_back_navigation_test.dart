@@ -1,8 +1,54 @@
+import 'package:erebrus_vpn/platform/app_channels.dart';
 import 'package:erebrus_vpn/view/bottombar/shell_back_scope.dart';
 import 'package:erebrus_vpn/view/browser/browser_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
+import 'package:webview_win_floating/webview_win_floating.dart';
+
+class _WebViewPlatform extends WebViewPlatform {
+  @override
+  PlatformNavigationDelegate createPlatformNavigationDelegate(
+    PlatformNavigationDelegateCreationParams params,
+  ) => WindowsPlatformNavigationDelegate(params);
+}
+
+/// Fake native WebView whose history depth the test controls.
+class _WebView extends PlatformWebViewController {
+  _WebView({required this.history})
+    : super.implementation(const PlatformWebViewControllerCreationParams());
+
+  bool history;
+  int backs = 0;
+
+  @override
+  Future<void> setJavaScriptMode(JavaScriptMode mode) async {}
+
+  @override
+  Future<void> addJavaScriptChannel(JavaScriptChannelParams params) async {}
+
+  @override
+  Future<void> setPlatformNavigationDelegate(
+    PlatformNavigationDelegate handler,
+  ) async {}
+
+  @override
+  Future<void> loadRequest(LoadRequestParams params) async {}
+
+  @override
+  Future<bool> canGoBack() async => history;
+
+  @override
+  Future<bool> canGoForward() async => false;
+
+  @override
+  Future<void> goBack() async {
+    backs++;
+    history = false;
+  }
+}
 
 /// Mirrors [MainShell]: tabs are index switches on one route.
 class _Shell extends StatefulWidget {
@@ -178,7 +224,7 @@ void main() {
   testWidgets('moveAppToBackground falls back to the system pop', (
     tester,
   ) async {
-    const appMethods = MethodChannel('com.erebrus.vpn/methods');
+    const appMethods = kAppMethodsChannel;
     final messenger = tester.binding.defaultBinaryMessenger;
     final calls = <String>[];
     messenger.setMockMethodCallHandler(appMethods, (call) async {
@@ -198,6 +244,53 @@ void main() {
 
     expect(calls, ['moveTaskToBack']);
     expect(systemPops, 1);
+  });
+
+  group('BrowserController.goBackIfPossible on a loaded page', () {
+    WebViewPlatform? previousPlatform;
+
+    setUp(() {
+      previousPlatform = WebViewPlatform.instance;
+      WebViewPlatform.instance = _WebViewPlatform();
+    });
+
+    tearDown(() {
+      if (previousPlatform != null) {
+        WebViewPlatform.instance = previousPlatform;
+      }
+    });
+
+    Future<(BrowserController, _WebView)> loaded({
+      required bool history,
+    }) async {
+      final view = _WebView(history: history);
+      final controller = BrowserController(
+        controllerFactory: () async => WebViewController.fromPlatform(view),
+      );
+      controller.addTab();
+      controller.setShellTabVisible(true);
+      await controller.navigate('https://example.com');
+      return (controller, view);
+    }
+
+    test('steps the live WebView back when it has history', () async {
+      final (controller, view) = await loaded(history: true);
+
+      expect(await controller.goBackIfPossible(), isTrue);
+      expect(view.backs, 1);
+      // History is now exhausted, so the next back belongs to the shell.
+      expect(await controller.goBackIfPossible(), isFalse);
+      expect(view.backs, 1);
+      controller.onClose();
+    });
+
+    test('leaves back to the shell when the WebView has no history', () async {
+      final (controller, view) = await loaded(history: false);
+
+      expect(await controller.goBackIfPossible(), isFalse);
+      expect(view.backs, 0);
+      controller.onClose();
+    });
   });
 
   test('browser back reports no history on the start page', () async {

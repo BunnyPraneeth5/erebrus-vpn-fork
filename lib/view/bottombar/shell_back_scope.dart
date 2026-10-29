@@ -1,16 +1,33 @@
 import 'dart:async';
 
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-const _appMethods = MethodChannel('com.erebrus.vpn/methods');
+import '../../platform/app_channels.dart';
+
+/// Whether back on the VPN tab needs [moveAppToBackground]. From Android 13
+/// (API 33) Flutter hands an unhandled root back to the system, which moves
+/// the launcher activity to the background and plays the predictive
+/// back-to-home animation. Older versions finish the activity instead.
+Future<bool> needsBackgroundOnBack() async {
+  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return false;
+  try {
+    final info = await DeviceInfoPlugin().androidInfo;
+    return info.version.sdkInt < 33;
+  } catch (e) {
+    debugPrint('[ShellBack] Android version unavailable: $e');
+    return true;
+  }
+}
 
 /// Sends the app to the background without finishing the activity, so the
 /// Flutter engine (and the Dart tunnel health / kill-switch monitors) keep
-/// running on Android 11 and lower too. Falls back to the default system pop.
+/// running on Android 12 and lower too. Falls back to the default system pop.
 Future<void> moveAppToBackground() async {
   try {
-    final moved = await _appMethods.invokeMethod<bool>('moveTaskToBack');
+    final moved = await kAppMethodsChannel.invokeMethod<bool>('moveTaskToBack');
     if (moved == true) return;
   } on MissingPluginException {
     // Fall through to the system default.
