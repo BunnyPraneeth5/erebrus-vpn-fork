@@ -1,4 +1,5 @@
 import 'package:erebrus_vpn/platform/app_channels.dart';
+import 'package:erebrus_vpn/platform/platform_capabilities.dart';
 import 'package:erebrus_vpn/view/bottombar/shell_back_scope.dart';
 import 'package:erebrus_vpn/view/browser/browser_controller.dart';
 import 'package:flutter/material.dart';
@@ -291,7 +292,10 @@ void main() {
       expect(view.backs, 0);
       controller.onClose();
     });
-  });
+    // System back exists on mobile only. On Windows/Linux hosts the browser
+    // takes the desktop path, which waits for verified VPN protection before
+    // loading (covered in desktop_browser_test.dart).
+  }, skip: PlatformCapabilities.usesDesktopVpnRunner);
 
   test('browser back reports no history on the start page', () async {
     final controller = BrowserController();
